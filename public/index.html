@@ -1,0 +1,1794 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>光刻效果预览 (Lithography Preview)</title>
+    <style>
+        :root {
+            --bg-color: #0a0a0f;
+            --text-color: #ffffff;
+            --color-red: #ff3333;
+            --color-blue: #3388ff;
+            --color-green: #33ff33;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: none;
+            -webkit-user-select: none;
+            /* Chrome/Safari/Opera 浏览器 */
+            -moz-user-select: none;
+            /* Firefox 浏览器 */
+            -ms-user-select: none;
+            /* IE/Edge 浏览器 */
+            user-select: none;
+            /* 标准语法 */
+            perspective: 1000px;
+            /* 3D 透视 */
+        }
+
+        /* 交互式背景与场景 */
+        #interactive-bg {
+            position: fixed;
+            top: -5vh;
+            left: -5vw;
+            width: 110vw;
+            height: 110vh;
+            background:
+                linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+                linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+                linear-gradient(135deg, #0f0f1a, #1a1a2e);
+            background-size: 50px 50px, 50px 50px, 100% 100%;
+            /* 网格纹理 + 深空渐变 */
+            z-index: -1;
+            transition: transform 0.1s ease-out;
+            pointer-events: none;
+        }
+
+        /* 确保画布和立方体可交互 */
+        /* 确保画布和立方体可交互 */
+        #viewer-canvas {
+            pointer-events: auto;
+            /* 画布3D倾斜过渡 */
+            transition: transform 0.1s ease-out;
+            transform-style: preserve-3d;
+        }
+
+        .cube-wrapper {
+            pointer-events: auto;
+        }
+
+        img {
+            -webkit-user-drag: none;
+            -khtml-user-drag: none;
+            -moz-user-drag: none;
+            -o-user-drag: none;
+            user-drag: none;
+            pointer-events: none;
+            /* 同时防止右键菜单以确保安全，如果这就是“完全不可交互”对图片的意思 */
+        }
+
+        /* =========================================
+           加载器样式
+           ========================================= */
+        #loader-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            transform: translateZ(200px);
+            overflow: hidden;
+        }
+
+        .loader-visual {
+            position: relative;
+            width: 160px;
+            height: 160px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .aurora-ring {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            border-top-color: #00f7ff;
+            border-left-color: #0066ff;
+            filter: drop-shadow(0 0 10px #00f7ff);
+            animation: spin 1.5s linear infinite;
+        }
+
+        .aurora-ring-inner {
+            position: absolute;
+            inset: 15px;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            border-bottom-color: #00f7ff;
+            border-right-color: #0066ff;
+            filter: drop-shadow(0 0 15px #0066ff);
+            opacity: 0.8;
+            animation: spin-rev 2.5s linear infinite;
+        }
+
+        .particles span {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: #fff;
+            border-radius: 50%;
+            opacity: 0;
+            box-shadow: 0 0 5px #00f7ff;
+            animation: particle-flash 2s ease-in-out infinite;
+        }
+
+        .particles span:nth-child(1) {
+            top: 30%;
+            left: 40%;
+            animation-delay: 0s;
+        }
+
+        .particles span:nth-child(2) {
+            top: 60%;
+            left: 70%;
+            animation-delay: 0.5s;
+            width: 3px;
+            height: 3px;
+        }
+
+        .particles span:nth-child(3) {
+            top: 70%;
+            left: 30%;
+            animation-delay: 1.0s;
+            width: 2px;
+            height: 2px;
+        }
+
+        .particles span:nth-child(4) {
+            top: 20%;
+            left: 60%;
+            animation-delay: 1.5s;
+        }
+
+        .loader-num {
+            position: relative;
+            z-index: 2;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 24px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            color: #fff;
+            text-shadow: 0 0 10px rgba(0, 247, 255, 0.5);
+        }
+
+        .loader-text {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.6);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes spin-rev {
+            0% {
+                transform: rotate(360deg);
+            }
+
+            100% {
+                transform: rotate(0deg);
+            }
+        }
+
+        @keyframes particle-flash {
+
+            0%,
+            100% {
+                opacity: 0;
+                transform: scale(0.5);
+            }
+
+            50% {
+                opacity: 0.8;
+                transform: scale(1.2);
+            }
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 0.5;
+            }
+
+            50% {
+                opacity: 0.9;
+            }
+        }
+
+        /* =========================================
+           UI 与控件
+           ========================================= */
+        #viewer-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .logo {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 900;
+            width: 120px;
+            pointer-events: none;
+        }
+
+        /* --- 主控制容器 (底部) --- */
+        .controls-container {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            z-index: 100;
+            transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        /* 无缝集成：按钮位于面板顶部 */
+        .sidebar-collapse-btn {
+            width: 80px;
+            height: 24px;
+            background: rgba(20, 20, 30, 0.95);
+            /* 覆盖自身的底部边框以与面板合并 */
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-bottom: none;
+            border-radius: 16px 16px 0 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            backdrop-filter: blur(15px);
+            z-index: 2;
+            /* 在面板之上 */
+            position: relative;
+            margin-bottom: -1px;
+            /* 重叠面板边框 */
+            /* 重叠面板边框 */
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            /* 改为悬浮样式 */
+            background: rgba(20, 20, 30, 0.6);
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            width: 60px;
+            height: 20px;
+            margin-top: 5px;
+            /* 与主面板分离 */
+            /* 移除原来的负边距和圆角逻辑 */
+        }
+
+        /* 通过创建一个伪元素来覆盖接缝，完全隐藏细微的线条 */
+        /* 移除遮挡伪元素，使按钮悬浮独立 */
+        .sidebar-collapse-btn::after {
+            display: none;
+        }
+
+        .sidebar-collapse-btn svg {
+            width: 18px;
+            height: 18px;
+            fill: rgba(255, 255, 255, 0.6);
+            transition: transform 0.4s ease;
+        }
+
+        /* 折叠状态：向下移动，仅保留按钮可见 */
+        .sidebar-collapsed .controls-container {
+            /* 向下平移控件的高度 (大约 80px) */
+            /* 我们平移 100% 减去按钮的可见高度，逻辑在 JS 或简化 CSS 中处理 */
+            transform: translateX(-50%) translateY(calc(100% - 24px));
+        }
+
+        .sidebar-collapsed .sidebar-collapse-btn svg {
+            transform: rotate(180deg);
+        }
+
+        .controls {
+            position: relative;
+            display: flex;
+            gap: 20px;
+            /* 增加间距以展示3D效果 */
+            background: rgba(20, 20, 30, 0.85);
+            /* 恢复胶囊背景，但稍微透明一点 */
+            padding: 20px 30px;
+            /* 为了安全起见增加额外的底部填充 */
+            /* 为了安全起见增加额外的底部填充 */
+            border-radius: 24px;
+            /* 全圆角 */
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(15px);
+            /* 恢复毛玻璃 */
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+            /* 恢复阴影 */
+            perspective: 1000px;
+            /* 保持3D透视 */
+            align-items: center;
+            justify-content: center;
+            z-index: 1;
+            align-items: center;
+            justify-content: center;
+            z-index: 1;
+            min-width: 320px;
+            max-width: 90vw;
+            /* 确保在窄屏上不溢出 */
+        }
+
+        @media (max-width: 400px) {
+            .controls {
+                min-width: auto;
+                width: 95vw;
+                padding: 15px 10px;
+                gap: 10px;
+            }
+
+            .btn {
+                padding: 10px 16px;
+                font-size: 13px;
+            }
+        }
+
+
+
+        .btn {
+            position: relative;
+            background: rgba(255, 255, 255, 0.05);
+            /* 默认半透明背景 */
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.9);
+            padding: 12px 24px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            white-space: nowrap;
+
+            /* 3D 卡片核心属性 */
+            transform-style: preserve-3d;
+            transition: transform 0.1s ease-out, box-shadow 0.2s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            /* Softer shadow */
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            /* Fainter border */
+            overflow: visible;
+            /* 必须可见，否则弹窗被切掉 */
+        }
+
+        .btn-content {
+            position: relative;
+            z-index: 2;
+            /* 移除translateZ以确保居中 */
+            pointer-events: none;
+            /* 让鼠标事件穿透到btn */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .btn-bg {
+            position: absolute;
+            /* 关键：扩大背景层，避免视差移动时露出空隙 */
+            top: -20px;
+            left: -20px;
+            right: -20px;
+            bottom: -20px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0));
+            z-index: 1;
+            /* border-radius 由父级 overflow: hidden 裁剪 */
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .btn:hover .btn-bg {
+            opacity: 0;
+            /* 禁用悬停色底效果 */
+        }
+
+        .btn:hover {
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.5);
+            /* 悬浮时阴影加深 */
+        }
+
+        .btn:active {
+            transform: scale(0.96);
+        }
+
+        .btn.active {
+            background: rgba(255, 255, 255, 0.25);
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.5);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            font-weight: 600;
+        }
+
+        .btn-red.active {
+            border-color: var(--color-red);
+            box-shadow: 0 0 15px rgba(255, 51, 51, 0.3);
+        }
+
+        .btn-blue.active {
+            border-color: var(--color-blue);
+            box-shadow: 0 0 15px rgba(51, 136, 255, 0.3);
+        }
+
+        .btn-green.active {
+            border-color: var(--color-green);
+            box-shadow: 0 0 15px rgba(51, 255, 51, 0.3);
+        }
+
+        /* --- 版本历史弹出窗口 (替换旧的切换视觉效果) --- */
+        .version-btn {
+            position: relative;
+            width: 44px;
+            /* 增加尺寸 */
+            height: 44px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            /* 圆形 */
+        }
+
+        .version-btn svg {
+            width: 26px;
+            height: 26px;
+            fill: currentColor;
+        }
+
+        .version-popup {
+            position: absolute;
+            bottom: 150%;
+            /* 在按钮上方 */
+            right: 0;
+            /* 与按钮右对齐 */
+            width: 140px;
+            background: rgba(30, 30, 40, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            backdrop-filter: blur(20px);
+            padding: 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.4);
+
+            opacity: 0;
+            transform: translateY(10px) scale(0.95);
+            pointer-events: none;
+            transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+            max-height: 0;
+            overflow: hidden;
+        }
+
+        .version-popup.show {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            pointer-events: auto;
+            max-height: 200px;
+            /* 限制高度 */
+        }
+
+        .version-list {
+            max-height: 150px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        /* 自定义滚动条 */
+        .version-list::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .version-list::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .version-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+        }
+
+        .v-item {
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.7);
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+
+        .v-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+
+        .v-item.active {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+            font-weight: bold;
+        }
+
+        /* --- 新的悬浮切换按钮 (主视图 <-> 子视图) --- */
+        .floating-toggle {
+            position: absolute;
+            bottom: 120px;
+            /* 在控制面板区域上方 */
+            right: 30px;
+            width: 56px;
+            height: 56px;
+            background: rgba(255, 255, 255, 0.1);
+            /* 玻璃质感 */
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 28px;
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            /* 有弹性的 */
+            z-index: 150;
+        }
+
+        .floating-toggle:hover {
+            transform: scale(1.1);
+            background: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .floating-toggle:active {
+            transform: scale(0.95);
+        }
+
+        .floating-toggle svg {
+            width: 28px;
+            height: 28px;
+            fill: #fff;
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+        }
+
+        .floating-toggle.hidden {
+            display: none;
+        }
+
+        .floating-toggle.disabled {
+            background: rgba(128, 128, 128, 0.2);
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: auto;
+            /* 允许悬停以查看已禁用，但我们在 JS 中阻止点击？或者如果我们想要完全静默，只需 pointer-events: none */
+        }
+
+        /* 如果需要，使禁用的按钮真正不可交互，或者只是视觉上的 */
+        .floating-toggle.disabled {
+            pointer-events: none;
+            filter: grayscale(100%);
+        }
+
+        /* =========================================
+           ViewCube 3D
+           ========================================= */
+        /* =========================================
+           ViewCube 3D
+           ========================================= */
+        .cube-wrapper {
+            position: absolute;
+            perspective: 600px;
+            z-index: 90;
+            pointer-events: none;
+            transition: none;
+            /* 按要求即时隐藏/显示 */
+        }
+
+        .cube-wrapper.hidden {
+            display: none;
+            /* 强制隐藏 */
+        }
+
+        .cube {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transform-style: preserve-3d;
+            /* 初始旋转将由 JS 设置 */
+            transition: transform 0.1s linear;
+        }
+
+        .face {
+            position: absolute;
+            width: 78px;
+            height: 78px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            font-size: 28px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Segoe UI', sans-serif;
+            backface-visibility: visible;
+            /* 如果我们需要即时反馈，则无需不透明度/亮度的过渡 */
+            backdrop-filter: blur(4px);
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.2);
+        }
+
+        /* 颜色 (红/蓝/绿 主题) */
+        .face.front,
+        .face.back {
+            background: linear-gradient(135deg, rgba(255, 50, 50, 0.1), rgba(255, 50, 50, 0.4));
+            border-color: rgba(255, 80, 80, 0.6);
+            color: #fff;
+            text-shadow: 0 0 8px rgba(255, 0, 0, 0.8);
+        }
+
+        .face.left,
+        .face.right {
+            background: linear-gradient(135deg, rgba(50, 150, 255, 0.1), rgba(50, 150, 255, 0.4));
+            border-color: rgba(80, 180, 255, 0.6);
+            color: #fff;
+            text-shadow: 0 0 8px rgba(0, 100, 255, 0.8);
+        }
+
+        .face.top,
+        .face.bottom {
+            background: linear-gradient(135deg, rgba(50, 255, 50, 0.1), rgba(50, 255, 50, 0.4));
+            border-color: rgba(80, 255, 80, 0.6);
+            color: #fff;
+            text-shadow: 0 0 8px rgba(0, 255, 0, 0.8);
+        }
+
+        .face.front {
+            transform: rotateY(0deg) translateZ(40px);
+        }
+
+        .face.back {
+            transform: rotateY(180deg) translateZ(40px);
+        }
+
+        .face.right {
+            transform: rotateY(90deg) translateZ(40px);
+        }
+
+        .face.left {
+            transform: rotateY(-90deg) translateZ(40px);
+        }
+
+        .face.top {
+            transform: rotateX(90deg) translateZ(40px);
+        }
+
+        .face.bottom {
+            transform: rotateX(-90deg) translateZ(40px);
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Logo -->
+    <img src="project_A/ui/logo.png" alt="Logo" class="logo">
+
+    <!-- Global Loader -->
+    <div id="loader-overlay">
+        <div class="loader-visual">
+            <div class="aurora-ring"></div>
+            <div class="aurora-ring-inner"></div>
+            <div class="particles">
+                <span></span><span></span><span></span><span></span>
+            </div>
+            <div id="loader-num" class="loader-num">0%</div>
+        </div>
+        <div class="loader-text">资源加载中...</div>
+    </div>
+
+    <!-- 视差背景 -->
+    <div id="interactive-bg"></div>
+
+    <!-- Canvas -->
+    <canvas id="viewer-canvas"></canvas>
+
+    <!-- ViewCube -->
+    <div class="cube-wrapper" id="cube-wrapper">
+        <div class="cube" id="view-cube">
+            <div class="face front" data-face="front">F</div>
+            <div class="face back" data-face="back">B</div>
+            <div class="face right" data-face="right">R</div>
+            <div class="face left" data-face="left">L</div>
+            <div class="face top" data-face="top">U</div>
+            <div class="face bottom" data-face="bottom">D</div>
+        </div>
+    </div>
+
+    <!-- 底部控制面板 -->
+    <div class="controls-container">
+        <!-- 折叠按钮 -->
+        <div class="sidebar-collapse-btn" id="sidebar-collapse">
+            <svg viewBox="0 0 24 24">
+                <path d="M7 10l5 5 5-5z" />
+            </svg>
+        </div>
+
+        <!-- 主控制按钮 -->
+        <div class="controls">
+            <button class="btn btn-red" id="btn-view-1">
+                <div class="btn-bg"></div>
+                <div class="btn-content">正视图</div>
+            </button>
+            <button class="btn btn-blue" id="btn-view-2">
+                <div class="btn-bg"></div>
+                <div class="btn-content">左视图</div>
+            </button>
+            <button class="btn btn-green" id="btn-view-3">
+                <div class="btn-bg"></div>
+                <div class="btn-content">俯视图</div>
+            </button>
+            <button class="btn" id="btn-view-static">
+                <div class="btn-bg"></div>
+                <div class="btn-content">整体平面图</div>
+            </button>
+
+            <!-- 版本按钮 -->
+            <button class="btn version-btn" id="btn-version">
+                <div class="btn-bg"></div>
+                <div class="btn-content">
+                    <!-- History Icon: Material Design History -->
+                    <!-- History Icon: Material Design History (Restored) -->
+                    <svg viewBox="0 0 24 24">
+                        <path
+                            d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" />
+                    </svg>
+                </div>
+                <!-- 版本弹窗 -->
+                <div class="version-popup" id="version-popup">
+                    <div class="version-list" id="version-list"></div>
+                </div>
+            </button>
+        </div>
+    </div>
+
+    <!-- 浮动切换按钮 -->
+    <div class="floating-toggle" id="float-toggle">
+        <!-- Toggle Icon: Material Design Swap Vert -->
+        <svg viewBox="0 0 24 24">
+            <path d="M9 3L5 6.99h3V14h2V6.99h3L9 3zm7 14.01V10h-2v7.01h-3L15 21l4-3.99h-3z" />
+        </svg>
+    </div>
+
+    <script>
+        // ==========================================
+        // 配置数据
+        // ==========================================
+        // ==========================================
+        // 配置与状态
+        // ==========================================
+        const GLOBAL_CONFIG = {
+            SENSITIVITY: 0.4,
+            MIN_ZOOM: 0.2,
+            MAX_ZOOM: 1.2,
+            SCAN_START: 100,
+            SCAN_LIMIT: 300,
+            DAMPING_FACTOR: 0.15,
+            SPRING_STRENGTH: 0.12 // 回弹强度，降低使其更柔和自然
+        };
+
+        // --- Dynamic Config Logic ---
+        const urlParams = new URLSearchParams(window.location.search);
+        const projectId = urlParams.get('project');
+
+        // Dynamic Path Base
+        function getPath(viewId, subId, isStatic) {
+            // If projectId is present, we try to load from uploads.
+            // Mapping: '1' -> 'v1', '1.1' -> 'v1' (or specific subfolder)
+
+            // For this demo, let's map:
+            // 1 (Front) -> v1
+            // 2 (Left) -> v2
+            // 3 (Top) -> v3
+
+            return projectId
+                ? `uploads/projects/${projectId}/${viewId}`
+                // Fallback to original hardcoded relative paths if no project ID
+                : `pic/${state.currentVersion}/${viewId}`;
+        }
+
+        // 覆盖原始的 detectVersions 逻辑以支持动态路径
+        // 注意：loadVersion 会调用 detectVersions，我们需要确保它兼容
+
+        // 基础配置模板 - 路径将根据版本动态变化
+        // 注意：pathSuffix 是旧逻辑。新逻辑直接在 getPath 中处理路径。
+        // 但为了兼容现有代码 (preloadAll 依赖 pathSuffix)，我们保持 config 结构，但修改 preloadAll
+
+        const BASE_VIEW_CONFIG = {
+            '1': {
+                type: 'sequence', subView: '1.1', name: '正视图', btnId: 'btn-view-1',
+                // pathSuffix: '/1', // OLD
+                viewFolder: '1',     // NEW identifier
+                angleRange: 60, baseRotY: 0, baseRotX: -15
+            },
+            '1.1': {
+                type: 'sequence', mainView: '1', name: '背视图', btnId: 'btn-view-1',
+                viewFolder: '1.1',
+                angleRange: 60, baseRotY: 180, baseRotX: -15
+            },
+            '2': {
+                type: 'sequence', subView: '2.1', name: '左视图', btnId: 'btn-view-2',
+                viewFolder: '2',
+                angleRange: 60, baseRotY: -90, baseRotX: -15
+            },
+            '2.1': {
+                type: 'sequence', mainView: '2', name: '右视图', btnId: 'btn-view-2',
+                viewFolder: '2.1',
+                angleRange: 60, baseRotY: 90, baseRotX: -15
+            },
+            '3': {
+                type: 'sequence', subView: '3.1', name: '俯视图', btnId: 'btn-view-3',
+                viewFolder: '3',
+                angleRange: 60, baseRotY: 0, baseRotX: -75
+            },
+            '3.1': {
+                type: 'sequence', mainView: '3', name: '仰视图', btnId: 'btn-view-3',
+                viewFolder: '3.1',
+                angleRange: 60, baseRotY: 0, baseRotX: 75,
+                fallbackFile: '仰图.png'
+            },
+            'static': {
+                type: 'static', subView: 'static_hdt', name: '整体平面图', btnId: 'btn-view-static',
+                viewFolder: 'static', // special case
+                baseRotX: 0, baseRotY: 0
+            },
+            'static_hdt': {
+                type: 'static', mainView: 'static', name: '整体平面图', btnId: 'btn-view-static',
+                viewFolder: 'static_hdt',
+                baseRotX: 0, baseRotY: 0
+            }
+        };
+
+        // 缓存与状态
+        const IMAGE_CACHE = {};
+        const IS_EMPTY = {};
+        const IS_SINGLE_FILE = {}; // 如果视图（即使是序列类型）只有 1 帧，则进行跟踪
+
+        const state = {
+            currentVersion: 'a', // 默认
+            availableVersions: [], // ['a', 'a1', 'a2']
+            currentViewId: null,
+            frames: [],
+            currentFrame: 0,
+            zoom: 0.8,
+            targetZoom: 0.8, // 新增目标缩放
+            savedZoomSequence: 0.8,
+            savedZoomStatic: 0.8,
+            pan: { x: 0, y: 0 },
+            targetPan: { x: 0, y: 0 }, // 拖动惯性目标
+            savedPanSequence: { x: 0, y: 0 },
+            savedPanStatic: { x: 0, y: 0 },
+            savedTargetPanSequence: { x: 0, y: 0 }, // 保存的惯性目标状态
+            savedTargetPanStatic: { x: 0, y: 0 }, // 保存的惯性目标状态
+            isDragging: false,
+            isRebounding: false,
+            lastX: 0, lastY: 0, lastPinch: 0,
+            preventClick: false,
+            sidebarCollapsed: false,
+            versionPopupOpen: false,
+            isTempSwitch: false,
+            parallax: { x: 0, y: 0 },
+
+            // ViewCube 平滑插值
+            cubeRot: { x: 0, y: 0 },
+            targetCubeRot: { x: 0, y: 0 },
+            cubeScale: 1,
+        };
+
+        const canvas = document.getElementById('viewer-canvas');
+        const ctx = canvas.getContext('2d');
+        const loader = document.getElementById('loader-overlay');
+        const loaderNum = document.getElementById('loader-num');
+        const viewCube = document.getElementById('view-cube');
+        const cubeFaces = document.querySelectorAll('.face');
+        const cubeWrapper = document.getElementById('cube-wrapper');
+
+        // UI 元素
+        const sidebarCollapseBtn = document.getElementById('sidebar-collapse');
+        //const controlsContainer = document.querySelector('.controls-container');
+        const btnVersion = document.getElementById('btn-version');
+        const versionPopup = document.getElementById('version-popup');
+        const versionList = document.getElementById('version-list');
+        const floatToggle = document.getElementById('float-toggle');
+
+        // ==========================================
+        // 1. 初始化与版本控制
+        // ==========================================
+        window.addEventListener('load', async () => {
+            resize();
+            window.addEventListener('resize', resize);
+            bindEvents();
+
+            await detectVersions();
+            renderVersionList();
+
+            // 加载初始版本
+            await loadVersion(state.currentVersion);
+        });
+
+        async function detectVersions() {
+            // [MODIFIED] Corrected version candidates for local 'project_A'
+            const candidates = ['v1', 'v2', 'v3', 'v4', 'v5'];
+            const found = [];
+
+            const checkFile = (url) => {
+                return new Promise(resolve => {
+                    const img = new Image();
+                    img.onload = () => resolve(true);
+                    img.onerror = () => resolve(false);
+                    img.src = url;
+                });
+            };
+
+            for (const ver of candidates) {
+                // a: pic/a/1/序列 0100.png --> project_A/v1/1/序列 0100.png
+                const path1 = encodeURI(`project_A/${ver}/1/序列 0100.png`);
+
+                if (await checkFile(path1)) {
+                    found.push(ver);
+                }
+            }
+
+            // Fallback
+            state.availableVersions = found.length > 0 ? found : ['v1'];
+            state.currentVersion = state.availableVersions[0];
+
+            console.log('Detected versions:', state.availableVersions);
+        }
+
+        function renderVersionList() {
+            versionList.innerHTML = '';
+            state.availableVersions.forEach(ver => {
+                const item = document.createElement('div');
+                item.className = 'v-item';
+                // 显示名称映射
+                item.innerText = ver;
+                if (ver === state.currentVersion) item.classList.add('active');
+
+                item.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (ver !== state.currentVersion) {
+                        switchVersion(ver);
+                    }
+                    toggleVersionPopup(false);
+                });
+                versionList.appendChild(item);
+            });
+        }
+
+        async function switchVersion(ver) {
+            loader.style.display = 'flex';
+            loader.style.opacity = 1;
+            if (loaderNum) loaderNum.innerText = '0%';
+
+            state.currentVersion = ver;
+            renderVersionList();
+
+            for (let k in IMAGE_CACHE) delete IMAGE_CACHE[k];
+            for (let k in IS_EMPTY) delete IS_EMPTY[k];
+            for (let k in IS_SINGLE_FILE) delete IS_SINGLE_FILE[k];
+
+            await loadVersion(ver);
+        }
+
+        async function loadVersion(ver) {
+            await preloadAll(ver);
+
+            // 重置所有视图状态，确保版本之间独立
+            state.zoom = 0.8;
+            state.targetZoom = 0.8;
+            state.pan = { x: 0, y: 0 };
+            state.targetPan = { x: 0, y: 0 };
+            state.savedZoomSequence = 0.8;
+            state.savedZoomStatic = 0.8;
+            state.savedPanSequence = { x: 0, y: 0 };
+            state.savedPanStatic = { x: 0, y: 0 };
+
+            switchView('1');
+
+            setTimeout(() => {
+                loader.style.opacity = 0;
+                setTimeout(() => loader.style.display = 'none', 500);
+            }, 200);
+        }
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            draw();
+        }
+
+        // ==========================================
+        // 2. 加载逻辑 (混合内容)
+        // ==========================================
+        async function preloadAll(ver) {
+            const tasks = [];
+
+            // 基于 BASE_VIEW_CONFIG 构建任务
+            for (const [id, config] of Object.entries(BASE_VIEW_CONFIG)) {
+                IMAGE_CACHE[id] = [];
+                IS_EMPTY[id] = false;
+                IS_SINGLE_FILE[id] = false;
+
+                if (config.type === 'static') {
+                    // Logic: project_A/{ver}/xgt/效果图.png OR project_A/{ver}/hdt/灰度图.png
+                    // Mapping 'static' viewFolder to 'xgt' and 'static_hdt' to 'hdt' based on observed folder structure
+                    const folderName = config.viewFolder === 'static' ? 'xgt' : 'hdt';
+                    const fileName = config.viewFolder === 'static' ? '效果图.png' : '灰度图.png';
+
+                    const p = `project_A/${ver}/${folderName}/${fileName}`;
+                    tasks.push({ type: 'static', id: id, src: encodeURI(p) });
+                } else {
+                    // Sequence
+                    const viewFolder = config.viewFolder; // e.g. '1', '1.1'
+
+                    // Fallback File
+                    if (config.fallbackFile) {
+                        const fbSrc = `project_A/${ver}/${viewFolder}/${config.fallbackFile}`;
+                        tasks.push({ type: 'fallback', id: id, src: encodeURI(fbSrc) });
+                    }
+
+                    // Sequence Frames
+                    for (let i = GLOBAL_CONFIG.SCAN_START; i <= GLOBAL_CONFIG.SCAN_LIMIT; i++) {
+                        const numStr = String(i).padStart(4, '0');
+                        // Path: project_A/{ver}/{viewFolder}/序列 0xxx.png
+                        const p = `project_A/${ver}/${viewFolder}/序列 ${numStr}.png`;
+                        tasks.push({ type: 'seq', id: id, src: encodeURI(p), index: i });
+                    }
+                }
+            }
+
+            let loadedCount = 0;
+            const totalCount = tasks.length;
+            let simulatedProgress = 0;
+            const simInterval = setInterval(() => {
+                if (simulatedProgress < 90) {
+                    simulatedProgress += (Math.random() * 5); // 更快的模拟
+                    updateLoaderUI(loadedCount, totalCount, simulatedProgress);
+                }
+            }, 100);
+
+            const promises = tasks.map(task => {
+                return loadImage(task.src).then(img => {
+                    loadedCount++;
+                    if (task.type === 'seq') {
+                        img._index = task.index;
+                        IMAGE_CACHE[task.id].push(img);
+                    } else if (task.type === 'fallback') {
+                        img._isFallback = true;
+                        IMAGE_CACHE[task.id].push(img);
+                    } else {
+                        // 静态类型
+                        IMAGE_CACHE[task.id] = [img];
+                    }
+                    updateLoaderUI(loadedCount, totalCount, simulatedProgress);
+                }).catch(() => {
+                    loadedCount++;
+                    updateLoaderUI(loadedCount, totalCount, simulatedProgress);
+                });
+            });
+
+            await Promise.all(promises);
+            clearInterval(simInterval);
+
+            // 后处理：检查我们实际拥有什么
+            for (const id of Object.keys(BASE_VIEW_CONFIG)) {
+                let arr = IMAGE_CACHE[id] || [];
+
+                const seqFrames = arr.filter(img => !img._isFallback);
+                const fallbackFrame = arr.find(img => img._isFallback);
+
+                if (seqFrames.length > 0) {
+                    // 我们有序列帧
+                    seqFrames.sort((a, b) => a._index - b._index);
+                    IMAGE_CACHE[id] = seqFrames;
+                    if (seqFrames.length === 1) IS_SINGLE_FILE[id] = true;
+                } else if (fallbackFrame) {
+                    // 没有序列帧，但有回退
+                    IMAGE_CACHE[id] = [fallbackFrame];
+                    IS_SINGLE_FILE[id] = true;
+                } else if (arr.length > 0 && BASE_VIEW_CONFIG[id].type === 'static') {
+                    // 普通静态 - 保持原样
+                } else {
+                    // 未找到
+                    IS_EMPTY[id] = true;
+                    IMAGE_CACHE[id] = [];
+                }
+            }
+        }
+
+        function updateLoaderUI(real, total, sim) {
+            const realPct = (real / total) * 100;
+            const display = Math.min(Math.max(realPct, sim), 99);
+            if (loaderNum) loaderNum.innerText = Math.floor(display) + '%';
+        }
+
+        function loadImage(src) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = (e) => {
+                    console.warn('Failed to load image:', src);
+                    reject(e);
+                };
+                img.src = src;
+            });
+        }
+
+        // ==========================================
+        // 2. 切换
+        // ==========================================
+
+
+        // ==========================================
+        // 3. UI 交互
+        // ==========================================
+        function bindEvents() {
+            // 无缝折叠检查：点击按钮
+            sidebarCollapseBtn.addEventListener('click', () => {
+                state.sidebarCollapsed = !state.sidebarCollapsed;
+                if (state.sidebarCollapsed) {
+                    document.body.classList.add('sidebar-collapsed');
+                } else {
+                    document.body.classList.remove('sidebar-collapsed');
+                }
+            });
+
+            // 主视图按钮点击事件
+            document.getElementById('btn-view-1').addEventListener('click', () => handleMainViewClick('1'));
+            document.getElementById('btn-view-2').addEventListener('click', () => handleMainViewClick('2'));
+            document.getElementById('btn-view-3').addEventListener('click', () => handleMainViewClick('3'));
+            document.getElementById('btn-view-static').addEventListener('click', () => handleMainViewClick('static'));
+
+            // 版本弹出窗口切换
+            btnVersion.addEventListener('click', (e) => {
+                e.stopPropagation();
+                toggleVersionPopup(!state.versionPopupOpen);
+            });
+
+            // 点击外部关闭弹出窗口
+            window.addEventListener('click', () => {
+                if (state.versionPopupOpen) toggleVersionPopup(false);
+            });
+
+            // 悬浮切换 (主视图 <-> 子视图)
+            // 逻辑：点击用于普通视图，长按用于静态图 (视图 4)
+
+            // 鼠标事件
+            floatToggle.addEventListener('mousedown', startToggleHold);
+            window.addEventListener('mouseup', endToggleHold);
+
+            // 触摸事件
+            floatToggle.addEventListener('touchstart', (e) => {
+                e.preventDefault(); // 防止点击
+                startToggleHold(e);
+            });
+            window.addEventListener('touchend', endToggleHold);
+
+            // 点击处理程序 (仅适用于视图 1-3)
+            floatToggle.addEventListener('click', (e) => {
+                // 重要：静态视图使用长按逻辑。我们需要在这里阻止点击逻辑。
+                const isStaticGroup = (state.currentViewId === 'static' || state.currentViewId === 'static_hdt');
+                if (isStaticGroup) {
+                    e.stopImmediatePropagation();
+                    return;
+                }
+
+                const conf = BASE_VIEW_CONFIG[state.currentViewId];
+                if (!conf) return;
+
+                const target = conf.subView || conf.mainView;
+                if (target && !IS_EMPTY[target]) {
+                    switchView(target);
+                }
+            });
+
+            // 画布逻辑
+            canvas.addEventListener('mousedown', startDrag);
+            window.addEventListener('mousemove', onDrag);
+            window.addEventListener('mouseup', endDrag);
+
+            canvas.addEventListener('touchstart', e => {
+                if (e.touches.length === 1) startDrag(e.touches[0]);
+                else if (e.touches.length === 2) startPinch(e);
+            }, { passive: false });
+
+            canvas.addEventListener('touchmove', e => {
+                e.preventDefault();
+                if (e.touches.length === 1) onDrag(e.touches[0]);
+                else if (e.touches.length === 2) onPinch(e);
+            }, { passive: false });
+
+            canvas.addEventListener('touchend', endDrag);
+
+            canvas.addEventListener('wheel', e => {
+                e.preventDefault();
+                // 缩放惯性：更新目标缩放值
+                const delta = -Math.sign(e.deltaY) * 0.15;
+                state.targetZoom = Math.max(GLOBAL_CONFIG.MIN_ZOOM, Math.min(GLOBAL_CONFIG.MAX_ZOOM, state.targetZoom + delta));
+            }, { passive: false });
+        }
+
+        function toggleVersionPopup(show) {
+            state.versionPopupOpen = show;
+            if (show) versionPopup.classList.add('show');
+            else versionPopup.classList.remove('show');
+        }
+
+        function handleMainViewClick(mainViewId) {
+            const currentConfig = BASE_VIEW_CONFIG[state.currentViewId];
+            const targetConfig = BASE_VIEW_CONFIG[mainViewId];
+            if (currentConfig && targetConfig && currentConfig.btnId === targetConfig.btnId) return;
+            switchView(mainViewId);
+        }
+
+        function switchView(viewId) {
+            const config = BASE_VIEW_CONFIG[viewId];
+            if (!config) return;
+
+            // 保存旧的缩放和平移
+            if (state.currentViewId) {
+                const oldType = BASE_VIEW_CONFIG[state.currentViewId].type;
+                if (oldType === 'sequence') {
+                    state.savedZoomSequence = state.zoom;
+                    state.savedPanSequence = { ...state.pan };
+                    // 同时保存targetPan，确保惯性状态也被保存
+                    state.savedTargetPanSequence = { ...state.targetPan };
+                } else {
+                    state.savedZoomStatic = state.zoom;
+                    state.savedPanStatic = { ...state.pan };
+                    // 同时保存targetPan，确保惯性状态也被保存
+                    state.savedTargetPanStatic = { ...state.targetPan };
+                }
+            }
+
+            state.currentViewId = viewId;
+
+            // 恢复新的缩放和平移
+            if (config.type === 'sequence') {
+                state.zoom = state.savedZoomSequence;
+                state.pan = { ...state.savedPanSequence };
+                state.targetPan = state.savedTargetPanSequence ? { ...state.savedTargetPanSequence } : { ...state.savedPanSequence };
+            } else {
+                state.zoom = state.savedZoomStatic;
+                state.pan = { ...state.savedPanStatic };
+                state.targetPan = state.savedTargetPanStatic ? { ...state.savedTargetPanStatic } : { ...state.savedPanStatic };
+            }
+            // 关键修复：切换视图后，同步目标缩放，防止惯性逻辑把缩放拉回之前的值
+            state.targetZoom = state.zoom;
+
+            state.frames = IMAGE_CACHE[viewId] || [];
+
+            // 帧初始化
+            // 如果是单个文件（即使最初是序列类型），从 0 开始
+            if (config.type === 'static' || IS_SINGLE_FILE[viewId]) {
+                state.currentFrame = 0;
+            } else {
+                state.currentFrame = Math.floor(state.frames.length / 2);
+            }
+
+            // 更新 UI 激活状态
+            document.querySelectorAll('.controls .btn').forEach(btn => btn.classList.remove('active'));
+            if (config.btnId) {
+                const btn = document.getElementById(config.btnId);
+                if (btn) btn.classList.add('active');
+            }
+
+            updateFloatingToggle();
+            draw();
+        }
+
+        function updateFloatingToggle() {
+            const config = BASE_VIEW_CONFIG[state.currentViewId];
+            if (!config) return;
+
+            let targetId = config.subView || config.mainView;
+            // 静态视图逻辑
+            if (state.currentViewId === 'static') targetId = IS_EMPTY['static_hdt'] ? null : 'static_hdt';
+            if (state.currentViewId === 'static_hdt') targetId = IS_EMPTY['static'] ? null : 'static';
+
+            const isEmpty = targetId ? IS_EMPTY[targetId] : true;
+
+            // 用户请求切换在每个历史页面上都存在。
+            if (!targetId) {
+                floatToggle.classList.add('hidden');
+            } else {
+                floatToggle.classList.remove('hidden');
+
+                // 新逻辑：如果目标存在但为空/无效，则使其变为灰色/禁用
+                if (isEmpty) {
+                    floatToggle.classList.add('disabled');
+                } else {
+                    floatToggle.classList.remove('disabled');
+                }
+            }
+        }
+
+        function startDrag(pt) {
+            state.isDragging = true;
+            state.lastX = pt.clientX;
+            state.lastY = pt.clientY;
+        }
+
+        function onDrag(pt) {
+            if (!state.isDragging) return;
+            const dx = pt.clientX - state.lastX;
+            const dy = pt.clientY - state.lastY;
+            const conf = BASE_VIEW_CONFIG[state.currentViewId];
+
+            // 如果确实是单个文件，无论配置类型如何，都使用单个文件模式逻辑
+            const isSingle = IS_SINGLE_FILE[state.currentViewId];
+
+            if (conf.type === 'static' || isSingle) {
+                // 平移逻辑 - 使用targetPan实现惯性
+                const limit = getSafeZone();
+                let nextX = state.targetPan.x + dx;
+                let nextY = state.targetPan.y + dy;
+                // 添加简单的阻尼限制
+                if (nextX > limit.x || nextX < -limit.x) nextX = state.targetPan.x + dx * GLOBAL_CONFIG.DAMPING_FACTOR;
+                if (nextY > limit.y || nextY < -limit.y) nextY = state.targetPan.y + dy * GLOBAL_CONFIG.DAMPING_FACTOR;
+
+                state.targetPan.x = nextX;
+                state.targetPan.y = nextY;
+            } else {
+                // 旋转逻辑
+                state.currentFrame += dx * GLOBAL_CONFIG.SENSITIVITY;
+                if (state.currentFrame < 0) state.currentFrame = 0;
+                if (state.currentFrame > state.frames.length - 1) state.currentFrame = state.frames.length - 1;
+            }
+
+            state.lastX = pt.clientX;
+            state.lastY = pt.clientY;
+            draw();
+        }
+
+        function endDrag() {
+            state.isDragging = false;
+            // 拖动结束时触发回弹检查
+            checkRebound();
+        }
+
+        // 切换长按逻辑
+        let toggleHoldTimer = null;
+        let isToggleHeld = false;
+
+        function startToggleHold(e) {
+            // 仅用于静态视图 4
+            const conf = BASE_VIEW_CONFIG[state.currentViewId];
+            if (!conf) return;
+            const isStaticGroup = (state.currentViewId === 'static' || state.currentViewId === 'static_hdt');
+
+            if (isStaticGroup) {
+                // 按下立即切换
+                state.isTempSwitch = true;
+                const target = (state.currentViewId === 'static') ? 'static_hdt' : 'static';
+                if (!IS_EMPTY[target]) switchView(target);
+            }
+        }
+
+        function endToggleHold(e) {
+            // 仅当我们在静态组中保持时才恢复
+            if (state.isTempSwitch) {
+                // 恢复到主静态
+                switchView('static');
+                state.isTempSwitch = false;
+            }
+        }
+
+        function startPinch(e) {
+            state.isDragging = false;
+            state.lastPinch = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            state.targetZoom = state.zoom; // Sync
+        }
+        function onPinch(e) {
+            const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            const newZoom = state.zoom + (dist - state.lastPinch) * 0.005;
+            updateZoom(newZoom);
+            state.targetZoom = state.zoom; // Sync to disable inertia during pinch
+            state.lastPinch = dist;
+        }
+        function updateZoom(z) { state.zoom = Math.max(GLOBAL_CONFIG.MIN_ZOOM, Math.min(GLOBAL_CONFIG.MAX_ZOOM, z)); draw(); }
+
+        // [这里是安全区代码]
+        function getSafeZone() {
+            // 如果处于静态视图或单文件模式，应用特定的安全区
+            const conf = BASE_VIEW_CONFIG[state.currentViewId];
+            if (conf && (conf.type === 'static' || IS_SINGLE_FILE[state.currentViewId])) {
+                // 用户指定：高 100，宽 300px
+                return { x: 500, y: 300 };
+            }
+            return { x: window.innerWidth * 0.5, y: window.innerHeight * 0.5 };
+        }
+
+        // [这里是回弹代码]
+        function checkRebound() {
+            if (state.isDragging) { state.isRebounding = false; return; }
+
+            const isSingle = IS_SINGLE_FILE[state.currentViewId];
+            const conf = BASE_VIEW_CONFIG[state.currentViewId];
+
+            if (!conf || (conf.type !== 'static' && !isSingle)) return;
+
+            // 仅对静态/平移模式使用回弹逻辑
+            const lim = getSafeZone();
+            // 检查targetPan是否超出边界（因为拖动时修改的是targetPan）
+            if (state.targetPan.x > lim.x || state.targetPan.x < -lim.x || state.targetPan.y > lim.y || state.targetPan.y < -lim.y) {
+                state.isRebounding = true;
+            }
+
+            if (state.isRebounding) {
+                const k = GLOBAL_CONFIG.SPRING_STRENGTH;
+                // 同时回弹targetPan和pan
+                state.targetPan.x += (0 - state.targetPan.x) * k;
+                state.targetPan.y += (0 - state.targetPan.y) * k;
+                state.pan.x += (0 - state.pan.x) * k;
+                state.pan.y += (0 - state.pan.y) * k;
+
+                if (Math.abs(state.targetPan.x) < 0.5 && Math.abs(state.targetPan.y) < 0.5) {
+                    state.targetPan.x = 0; state.targetPan.y = 0;
+                    state.pan.x = 0; state.pan.y = 0;
+                    state.isRebounding = false;
+                }
+                draw();
+            }
+        }
+
+        // 渲染循环已合并到 updateLogic，此处移除旧的 drawLoop
+
+        // ==========================================
+        // 5. 绘制
+        // ==========================================
+        function draw() {
+            // 背景 - 清除画布以显示下方的 CSS 背景
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+
+            const frames = state.frames;
+            if (!frames || frames.length === 0) return;
+
+            let idx = 0;
+            // 帧选择
+            if (IS_SINGLE_FILE[state.currentViewId]) {
+                idx = 0;
+            } else {
+                idx = Math.max(0, Math.min(frames.length - 1, Math.floor(state.currentFrame)));
+            }
+
+            const img = frames[idx];
+            if (!img) return;
+
+            // 绘制图像
+            const cw = canvas.width, ch = canvas.height;
+            const scale = Math.min(cw / img.width, ch / img.height) * state.zoom;
+            // 额外检查：图像有效？
+            if (img.width === 0) return;
+
+            const dw = img.width * scale;
+            const dh = img.height * scale;
+            const dx = (cw - dw) / 2 + state.pan.x;
+            const dy = (ch - dh) / 2 + state.pan.y;
+
+            ctx.drawImage(img, dx, dy, dw, dh);
+
+            // 视图立方体
+            positionCube(dx, dy, dw, dh);
+            updateCube(idx, frames.length);
+        }
+
+        function positionCube(imgX, imgY, imgW, imgH) {
+            // 可见性规则：如果是静态类型或单个文件则隐藏
+            // 为了稳健性，直接从缓存中检查长度
+            const currentFrames = IMAGE_CACHE[state.currentViewId];
+            const isSingle = (!currentFrames || currentFrames.length <= 1);
+
+            if (state.currentViewId === 'static' || state.currentViewId === 'static_hdt' || isSingle) {
+                cubeWrapper.classList.add('hidden');
+                return;
+            } else {
+                cubeWrapper.classList.remove('hidden');
+            }
+
+            const scale = Math.max(0.6, Math.min(1.5, state.zoom));
+            const visualSize = 80 * scale; // 方块视觉上的大小
+            const offsetX = 10;
+            const offsetY = 10;
+
+            // 计算方块应该在的位置
+            const cubeLeft = imgX + imgW + offsetX;
+            const cubeTop = imgY + imgH - visualSize - offsetY;
+
+            // --- 核心修改开始 ---
+            // 1. 去掉了 transformOrigin = '0 0'，让它默认在中心旋转，修复“轴偏了”的问题
+            // 2. 因为此时默认原点是中心，为了让它还在右下角，我们只需控制 left/top 即可
+            //    (CSS中 .cube-wrapper 最好加上 transform-origin: center center; 默认一般就是，不用特意加)
+
+            // 这里的 scale 只是计算并存储状态，不直接应用 transform
+            state.cubeScale = scale;
+
+            // 重新计算坐标
+            cubeWrapper.style.transformOrigin = 'center center';
+            // 注意：不要在这里设置 transform，交由 updateLogic 统一处理 (scale + rotate)
+
+            cubeWrapper.style.left = `${cubeLeft}px`;
+            cubeWrapper.style.top = `${cubeTop}px`;
+            cubeWrapper.style.width = '78px';
+            cubeWrapper.style.height = '78px';
+        }
+
+        function updateCube(currentIdx, totalFrames) {
+            const conf = BASE_VIEW_CONFIG[state.currentViewId];
+            if (!conf) return;
+
+            let rx = conf.baseRotX || 0;
+            let ry = conf.baseRotY || 0;
+
+            if (conf.type === 'sequence' && totalFrames > 1 && !IS_SINGLE_FILE[state.currentViewId]) {
+                const range = conf.angleRange || 60;
+                const pct = currentIdx / (totalFrames - 1);
+                ry += (pct - 0.5) * range;
+            }
+            // 惯性修改：仅更新目标值，不直接操作 DOM
+            state.targetCubeRot.x = rx;
+            state.targetCubeRot.y = ry;
+
+            // 辅助函数：绕 X 轴旋转向量
+            const rotX = (v, angle) => {
+                const rad = angle * Math.PI / 180;
+                const c = Math.cos(rad), s = Math.sin(rad);
+                return { x: v.x, y: v.y * c - v.z * s, z: v.y * s + v.z * c };
+            };
+            // 辅助函数：绕 Y 轴旋转向量
+            const rotY = (v, angle) => {
+                const rad = angle * Math.PI / 180;
+                const c = Math.cos(rad), s = Math.sin(rad);
+                return { x: v.x * c + v.z * s, y: v.y, z: -v.x * s + v.z * c };
+            };
+
+            cubeFaces.forEach(face => {
+                const type = face.getAttribute('data-face');
+
+                // 视图 1 和 2 (序列) 的特殊规则：
+                // 无论旋转如何，顶部应该是亮的，底部应该是暗的
+                // 因为用户说：“绿色更改它：U 亮 D 暗”在“前两个按钮”中
+                const isView1Or2 = (state.currentViewId === '1' || state.currentViewId === '1.1' ||
+                    state.currentViewId === '2' || state.currentViewId === '2.1');
+
+                if (isView1Or2 && (type === 'top' || type === 'bottom')) {
+                    if (type === 'top') {
+                        face.style.opacity = 0.95;
+                        face.style.filter = 'brightness(1.1)';
+                    } else {
+                        face.style.opacity = 0.25;
+                        face.style.filter = 'brightness(0.5)';
+                    }
+                    return; // 跳过正常计算
+                }
+
+                let frx = 0, fry = 0;
+                if (type === 'back') fry = 180;
+                else if (type === 'right') fry = 90;
+                else if (type === 'left') fry = -90;
+                else if (type === 'top') frx = 90;
+                else if (type === 'bottom') frx = -90;
+
+                // 法向量 (0,0,1) 变换：面旋转 -> 立方体旋转
+                let v = { x: 0, y: 0, z: 1 };
+                v = rotX(v, frx);
+                v = rotY(v, fry);
+                v = rotX(v, rx);
+                v = rotY(v, ry);
+
+                // 亮度逻辑
+                const isFacing = v.z > 0.1; // 阈值
+                face.style.opacity = isFacing ? 0.95 : 0.25;
+                face.style.filter = isFacing ? 'brightness(1.1)' : 'brightness(0.5)';
+            });
+        }
+
+        // 独立的亮度更新函数，用于在transform更新时同步亮度
+        function updateCubeBrightness(currentIdx, totalFrames) {
+            const conf = BASE_VIEW_CONFIG[state.currentViewId];
+            if (!conf) return;
+
+            let rx = state.cubeRot.x; // 使用当前实际旋转值
+            let ry = state.cubeRot.y;
+
+            // 辅助函数：绕 X 轴旋转向量
+            const rotX = (v, angle) => {
+                const rad = angle * Math.PI / 180;
+                const c = Math.cos(rad), s = Math.sin(rad);
+                return { x: v.x, y: v.y * c - v.z * s, z: v.y * s + v.z * c };
+            };
+            // 辅助函数：绕 Y 轴旋转向量
+            const rotY = (v, angle) => {
+                const rad = angle * Math.PI / 180;
+                const c = Math.cos(rad), s = Math.sin(rad);
+                return { x: v.x * c + v.z * s, y: v.y, z: -v.x * s + v.z * c };
+            };
+
+            cubeFaces.forEach(face => {
+                const type = face.getAttribute('data-face');
+
+                // 视图 1 和 2 的特殊规则
+                const isView1Or2 = (state.currentViewId === '1' || state.currentViewId === '1.1' ||
+                    state.currentViewId === '2' || state.currentViewId === '2.1');
+
+                if (isView1Or2 && (type === 'top' || type === 'bottom')) {
+                    if (type === 'top') {
+                        face.style.opacity = 0.95;
+                        face.style.filter = 'brightness(1.1)';
+                    } else {
+                        face.style.opacity = 0.25;
+                        face.style.filter = 'brightness(0.5)';
+                    }
+                    return;
+                }
+
+                let frx = 0, fry = 0;
+                if (type === 'back') fry = 180;
+                else if (type === 'right') fry = 90;
+                else if (type === 'left') fry = -90;
+                else if (type === 'top') frx = 90;
+                else if (type === 'bottom') frx = -90;
+
+                let v = { x: 0, y: 0, z: 1 };
+                v = rotX(v, frx);
+                v = rotY(v, fry);
+                v = rotX(v, rx);
+                v = rotY(v, ry);
+
+                const isFacing = v.z > 0.1;
+                face.style.opacity = isFacing ? 0.95 : 0.25;
+                face.style.filter = isFacing ? 'brightness(1.1)' : 'brightness(0.5)';
+            });
+        }
+
+        // ==========================================
+        // 6. 视差效果 (新增)
+        // ==========================================
+        // const scene = document.getElementById('scene'); // Removed
+        const bgSensitivity = 10; // 整个页面背景位移的灵敏度 (像素)
+        const bg = document.getElementById('interactive-bg');
+
+        // ===== 整个页面的互动背景 与 主视图倾斜 =====
+        // ===== 整个页面的互动背景 与 主视图倾斜 =====
+        document.addEventListener('mousemove', (e) => {
+            // 如果正在拖动，只暂停背景移动(可选)，但用户要求拖动时也触发倾斜
+            // 所以这里移除完全return的逻辑
+            // if (state.isDragging) ... 
+
+            const x = (e.clientX / window.innerWidth - 0.5) * 2; // -1 to 1
+            const y = (e.clientY / window.innerHeight - 0.5) * 2; // -1 to 1
+
+            // 1. 背景反向位移 (拖动时暂停背景移动以减少干扰，或者也保持? 用户只说了拖动时触发，并未明确指背景)
+            // 通常背景保持不动或动都可以，这里我们保持背景跟随(既然用户喜欢动)
+            if (bg) {
+                bg.style.transform = `translate(${x * -bgSensitivity}px, ${y * -bgSensitivity}px)`;
+            }
+
+            // 2. 主视图画布 3D 倾斜 (Main Viewer Tilt)
+            const canvasTiltStrength = 5; // 如果需要更强烈的效果可调大，例如 10
+            const rotX = -y * canvasTiltStrength; // 鼠标下(y>0) -> 仰视(rotX<0) 或 俯视? 
+            // 按照卡片逻辑: 鼠标在下，卡片上边缘翘起(rotX>0)? 
+            // 用户参考代码: rotateX = ((y - centerY) / centerY) * sensitivity; (y大 -> rotX大)
+            // 让我们保持一致:
+            const cRotX = y * canvasTiltStrength;
+            const cRotY = -x * canvasTiltStrength;
+
+            // 应用到画布
+            if (canvas) {
+                canvas.style.transform = `rotateX(${cRotX}deg) rotateY(${cRotY}deg)`;
+            }
+        });
+
+        // ===== 卡片按钮的鼠标互动效果 =====
+        // ===== 移除旧的按钮视差逻辑 =====
+        // (之前这里有 document.querySelectorAll('.btn')... 代码，现在被彻底移除以满足用户需求)
+
+        // ==========================================
+        // 渲染循环 (惯性核心: 缩放 + ViewCube)
+        // ==========================================
+        function updateLogic() {
+            let needsRedraw = false;
+
+            // 1. 缩放惯性
+            if (Math.abs(state.targetZoom - state.zoom) > 0.001) {
+                state.zoom += (state.targetZoom - state.zoom) * 0.1;
+                needsRedraw = true;
+
+                // 背景网格景深效果：根据zoom动态调整背景格子大小
+                const bg = document.getElementById('interactive-bg');
+                if (bg) {
+                    // 基础格子大小50px，随zoom变化（zoom越大格子越大，模拟离近）
+                    const gridSize = 50 * (0.5 + state.zoom * 0.625); // zoom 0.8时约50px
+                    bg.style.backgroundSize = `${gridSize}px ${gridSize}px, ${gridSize}px ${gridSize}px, 100% 100%`;
+                }
+            }
+
+            // 2. 平移惯性（静态视图）
+            if (Math.abs(state.targetPan.x - state.pan.x) > 0.1 || Math.abs(state.targetPan.y - state.pan.y) > 0.1) {
+                state.pan.x += (state.targetPan.x - state.pan.x) * 0.15;
+                state.pan.y += (state.targetPan.y - state.pan.y) * 0.15;
+                needsRedraw = true;
+            }
+
+            // 3. ViewCube 惯性插值
+            if (Math.abs(state.targetCubeRot.x - state.cubeRot.x) > 0.01 || Math.abs(state.targetCubeRot.y - state.cubeRot.y) > 0.01) {
+                state.cubeRot.x += (state.targetCubeRot.x - state.cubeRot.x) * 0.1;
+                state.cubeRot.y += (state.targetCubeRot.y - state.cubeRot.y) * 0.1;
+
+                // 关键修复：应用到内部的viewCube（.cube），而不是外层wrapper
+                if (viewCube && state.cubeScale) {
+                    // 使用 scale3d 防止 Z 轴压扁
+                    const s = state.cubeScale;
+                    viewCube.style.transform = `scale3d(${s}, ${s}, ${s}) rotateX(${state.cubeRot.x}deg) rotateY(${state.cubeRot.y}deg)`;
+
+                    // 同步更新面的亮度，解决亮度跟不上旋转的问题
+                    const currentFrames = IMAGE_CACHE[state.currentViewId];
+                    const idx = Math.max(0, Math.min((currentFrames?.length || 1) - 1, Math.floor(state.currentFrame)));
+                    updateCubeBrightness(idx, currentFrames?.length || 1);
+                }
+            }
+
+            // 4. 回弹逻辑
+            if (state.isRebounding) {
+                checkRebound(); // 这会调用 draw
+            } else if (needsRedraw) {
+                draw(); // 其他情况需要时才重绘
+            }
+
+            requestAnimationFrame(updateLogic);
+        }
+
+        // 启动循环
+        requestAnimationFrame(updateLogic);
+
+    </script>
+</body>
+
+</html>

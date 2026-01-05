@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <title>TechSun Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #1a1a1a;
+            --surface: #2d2d2d;
+            --text: #e0e0e0;
+            --accent: #E63946;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .login-wrap {
+            display: flex;
+            height: 100vh;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .login-box {
+            background: var(--surface);
+            padding: 40px;
+            border-radius: 8px;
+            width: 300px;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 20px;
+            background: #444;
+            border: none;
+            color: #fff;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            background: var(--accent);
+            border: none;
+            color: #fff;
+            cursor: pointer;
+        }
+
+        /* Dashboard */
+        .admin-layout {
+            display: none;
+            padding: 20px;
+        }
+
+        .admin-layout.active {
+            display: block;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 40px;
+            border-bottom: 1px solid #444;
+            padding-bottom: 20px;
+        }
+
+        .project-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+        }
+
+        .project-card {
+            background: var(--surface);
+            padding: 20px;
+            border-radius: 8px;
+            position: relative;
+        }
+
+        .status-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #4caf50;
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        /* Upload Modal */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--surface);
+            padding: 30px;
+            width: 500px;
+            border-radius: 8px;
+        }
+
+        .drop-zone {
+            border: 2px dashed #666;
+            height: 150px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 20px 0;
+            color: #888;
+        }
+
+        .drop-zone.hover {
+            border-color: var(--accent);
+            color: #fff;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Login -->
+    <div class="login-wrap" id="login-view">
+        <div class="login-box">
+            <h2 style="margin-top:0">ADMIN LOGIN</h2>
+            <input type="text" id="admin-user" placeholder="Username">
+            <input type="password" id="admin-pass" placeholder="Password">
+            <button onclick="adminLogin()">ENTER</button>
+        </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div class="admin-layout" id="dashboard-view">
+        <header>
+            <h1>PROJECTS MANAGER</h1>
+            <div>
+                <button style="width:auto; background:#444;" onclick="logout()">LOGOUT</button>
+                <button style="width:auto;" onclick="openCreateModal()">+ NEW PROJECT</button>
+            </div>
+        </header>
+
+        <div class="project-grid" id="project-list">
+            <!-- Projects injected here -->
+        </div>
+    </div>
+
+    <!-- Create Modal -->
+    <div class="modal" id="create-modal">
+        <div class="modal-content">
+            <h2>NEW PROJECT</h2>
+            <select id="proj-type"
+                style="width:100%; padding:10px; background:#444; color:#fff; border:none; margin-bottom:20px;">
+                <option value="Packaging">Soft Packaging (软包装)</option>
+                <option value="Cap">Smart Cap (智能瓶盖)</option>
+                <option value="Label">Anti-fake Label (防伪标签)</option>
+                <option value="Metal">Can (金属制罐)</option>
+                <option value="Tobacco">Tobacco (烟标)</option>
+                <option value="Wine">Wine (酒类包装)</option>
+            </select>
+            <button onclick="createProject()">CREATE</button>
+            <button onclick="closeModal()" style="background:transparent; margin-top:10px;">CANCEL</button>
+        </div>
+    </div>
+
+    <!-- Upload Modal -->
+    <div class="modal" id="upload-modal">
+        <div class="modal-content">
+            <h2>UPLOAD ASSETS</h2>
+            <p id="upload-target-name"></p>
+            <div class="drop-zone" id="drop-zone">
+                DRAG FILES HERE
+            </div>
+            <div id="upload-status"></div>
+            <button onclick="closeUploadModal()" style="background:transparent;">CLOSE</button>
+        </div>
+    </div>
+
+    <script>
+        const API = 'http://localhost:3000/api';
+        let currentUploadProjectId = null;
+
+        // --- Auth ---
+        function checkAuth() {
+            const token = localStorage.getItem('admin_token');
+            if (token) {
+                document.getElementById('login-view').style.display = 'none';
+                document.getElementById('dashboard-view').classList.add('active');
+                loadProjects();
+            }
+        }
+
+        async function adminLogin() {
+            const u = document.getElementById('admin-user').value;
+            const p = document.getElementById('admin-pass').value;
+
+            try {
+                const res = await fetch(API + '/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: u, password: p })
+                });
+                const data = await res.json();
+
+                if (data.token && data.role === 'admin') {
+                    localStorage.setItem('admin_token', data.token);
+                    checkAuth();
+                } else {
+                    alert('Invalid login');
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        function logout() {
+            localStorage.removeItem('admin_token');
+            window.location.reload();
+        }
+
+        // --- Projects ---
+        async function loadProjects() {
+            const res = await fetch(API + '/my-projects', {
+                headers: { 'Authorization': 'Bearer ' + localStorage.getItem('admin_token') }
+            });
+            const projects = await res.json();
+
+            const list = document.getElementById('project-list');
+            list.innerHTML = '';
+
+            projects.forEach(p => {
+                const el = document.createElement('div');
+                el.className = 'project-card';
+                el.innerHTML = `
+                    <div class="status-badge">${p.versions.length} VERSIONS</div>
+                    <h3>${p.id}</h3>
+                    <p>${p.name}</p>
+                    <p style="font-size:12px; opacity:0.6;">${new Date(p.created_at).toLocaleDateString()}</p>
+                    <div style="margin-top:20px; display:flex; gap:10px;">
+                        <button style="flex:1" onclick="openUploadModal('${p.id}')">UPLOAD</button>
+                    </div>
+                `;
+                list.appendChild(el);
+            });
+        }
+
+        async function createProject() {
+            const type = document.getElementById('proj-type').value;
+            const res = await fetch(API + '/projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type })
+            });
+            const data = await res.json();
+            closeModal();
+            loadProjects();
+            alert('Created Project: ' + data.id);
+        }
+
+        // --- Upload ---
+        function openCreateModal() { document.getElementById('create-modal').classList.add('active'); }
+        function closeModal() { document.getElementById('create-modal').classList.remove('active'); }
+
+        function openUploadModal(pid) {
+            currentUploadProjectId = pid;
+            document.getElementById('upload-target-name').innerText = "Project: " + pid;
+            document.getElementById('upload-modal').classList.add('active');
+        }
+        function closeUploadModal() { document.getElementById('upload-modal').classList.remove('active'); }
+
+        // Drag & Drop
+        const dz = document.getElementById('drop-zone');
+        dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('hover'); });
+        dz.addEventListener('dragleave', (e) => { e.preventDefault(); dz.classList.remove('hover'); });
+        dz.addEventListener('drop', handleDrop);
+
+        async function handleDrop(e) {
+            e.preventDefault();
+            dz.classList.remove('hover');
+            const files = e.dataTransfer.files;
+            if (files.length === 0) return;
+
+            const formData = new FormData();
+            formData.append('projectId', currentUploadProjectId);
+            formData.append('version', 'v1'); // Default to v1 for simplicity or ask user
+
+            // Sort files by name? The browser might not guarantee order here
+            // But usually we just append.
+            for (let i = 0; i < files.length; i++) {
+                formData.append('files', files[i]);
+            }
+
+            document.getElementById('upload-status').innerText = "Uploading " + files.length + " files...";
+
+            try {
+                const res = await fetch(API + '/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                document.getElementById('upload-status').innerText = "Success! " + data.count + " files uploaded.";
+                loadProjects();
+            } catch (err) {
+                document.getElementById('upload-status').innerText = "Error uploading.";
+            }
+        }
+
+        checkAuth();
+    </script>
+</body>
+
+</html>

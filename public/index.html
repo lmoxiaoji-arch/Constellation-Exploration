@@ -1031,6 +1031,9 @@
 
             switchView('1');
 
+            // 更新按钮文字
+            updateButtonLabels();
+
             setTimeout(() => {
                 loader.style.opacity = 0;
                 setTimeout(() => loader.style.display = 'none', 500);
@@ -1158,6 +1161,27 @@
                 };
                 img.src = src;
             });
+        }
+
+        // 动态更新按钮文字
+        function updateButtonLabels() {
+            // 检查每个主视图的子视图是否存在且不为空
+            const btn1 = document.getElementById('btn-view-1');
+            const btn2 = document.getElementById('btn-view-2');
+            const btn3 = document.getElementById('btn-view-3');
+
+            if (btn1) {
+                const hasSubView = !IS_EMPTY['1.1'];
+                btn1.querySelector('.btn-content').innerText = hasSubView ? '正/背视图' : '正视图';
+            }
+            if (btn2) {
+                const hasSubView = !IS_EMPTY['2.1'];
+                btn2.querySelector('.btn-content').innerText = hasSubView ? '左/右视图' : '左视图';
+            }
+            if (btn3) {
+                const hasSubView = !IS_EMPTY['3.1'];
+                btn3.querySelector('.btn-content').innerText = hasSubView ? '俯/仰视图' : '俯视图';
+            }
         }
 
         // ==========================================
@@ -1572,9 +1596,10 @@
                 const pct = currentIdx / (totalFrames - 1);
                 ry += (pct - 0.5) * range;
             }
-            // 惯性修改：仅更新目标值，不直接操作 DOM
+            // 修复：反转Y轴旋转方向，使ViewCube朝向与视图名称匹配
+            // 左视图应显示L面，右视图应显示R面
             state.targetCubeRot.x = rx;
-            state.targetCubeRot.y = ry;
+            state.targetCubeRot.y = -ry;  // 取负以修正方向
 
             // 辅助函数：绕 X 轴旋转向量
             const rotX = (v, angle) => {

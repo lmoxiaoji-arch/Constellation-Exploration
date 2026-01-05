@@ -24,3 +24,6 @@ build/
 # 临时文件
 *.tmp
 *.temp
+
+# 排除嵌套仓库
+OpenSpec/

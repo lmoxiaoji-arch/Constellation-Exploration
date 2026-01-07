@@ -806,10 +806,11 @@
             // 手动配置（当 AUTO_DETECT = false 时使用）
             ASSET_BASE_PATH: 'project_A',  // 本地开发: 'project_A' | 云服务器: ''
 
-            // 检测逻辑：如果 URL 包含 localhost 或 127.0.0.1，则为本地环境
+            // 检测逻辑：如果 URL 包含 localhost、127.0.0.1 或云服务器IP，则使用 project_A 路径
             isLocal() {
                 return window.location.hostname === 'localhost' ||
                     window.location.hostname === '127.0.0.1' ||
+                    window.location.hostname === '47.98.170.16' ||  // 云服务器IP
                     window.location.hostname === '';
             },
 
@@ -1134,7 +1135,7 @@
             let simulatedProgress = 0;
             const simInterval = setInterval(() => {
                 if (simulatedProgress < 90) {
-                    simulatedProgress += (Math.random() * 5); // 更快的模拟
+                    simulatedProgress += (Math.random() * 8); // 3秒左右完成模拟（原5秒）
                     updateLoaderUI(loadedCount, totalCount, simulatedProgress);
                 }
             }, 100);

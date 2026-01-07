@@ -707,7 +707,7 @@
 <body>
 
     <!-- Logo -->
-    <img src="project_A/ui/logo.png" alt="Logo" class="logo">
+    <img src="" id="app-logo" alt="Logo" class="logo">
 
     <!-- Global Loader -->
     <div id="loader-overlay">
@@ -797,10 +797,44 @@
 
     <script>
         // ==========================================
-        // 配置数据
+        // 部署环境配置（云服务器自动适配）
         // ==========================================
+        const DEPLOY_CONFIG = {
+            // 自动检测：本地开发使用 'project_A'，云服务器使用 ''
+            AUTO_DETECT: true,
+
+            // 手动配置（当 AUTO_DETECT = false 时使用）
+            ASSET_BASE_PATH: 'project_A',  // 本地开发: 'project_A' | 云服务器: ''
+
+            // 检测逻辑：如果 URL 包含 localhost 或 127.0.0.1，则为本地环境
+            isLocal() {
+                return window.location.hostname === 'localhost' ||
+                    window.location.hostname === '127.0.0.1' ||
+                    window.location.hostname === '';
+            },
+
+            // 获取资源基础路径
+            getBasePath() {
+                if (this.AUTO_DETECT) {
+                    // 自动检测：本地环境使用 project_A，云服务器留空
+                    return this.isLocal() ? 'project_A' : '';
+                }
+                return this.ASSET_BASE_PATH;
+            },
+
+            // 构建完整路径
+            buildPath(relativePath) {
+                const base = this.getBasePath();
+                if (!base) return relativePath;
+                return `${base}/${relativePath}`;
+            }
+        };
+
+        // 设置 Logo 路径
+        document.getElementById('app-logo').src = DEPLOY_CONFIG.buildPath('ui/logo.png');
+
         // ==========================================
-        // 配置与状态
+        // 应用全局配置
         // ==========================================
         const GLOBAL_CONFIG = {
             SENSITIVITY: 0.4,
@@ -952,7 +986,7 @@
         });
 
         async function detectVersions() {
-            // [MODIFIED] Corrected version candidates for local 'project_A'
+            // 动态版本检测（支持本地和云服务器部署）
             const candidates = ['v1', 'v2', 'v3', 'v4', 'v5'];
             const found = [];
 
@@ -966,8 +1000,8 @@
             };
 
             for (const ver of candidates) {
-                // a: pic/a/1/序列 0100.png --> project_A/v1/1/序列 0100.png
-                const path1 = encodeURI(`project_A/${ver}/1/序列 0100.png`);
+                // 使用动态路径：本地 = project_A/v1/1/..., 云服务器 = v1/1/...
+                const path1 = encodeURI(DEPLOY_CONFIG.buildPath(`${ver}/1/序列 0100.png`));
 
                 if (await checkFile(path1)) {
                     found.push(ver);
@@ -1029,7 +1063,17 @@
             state.savedPanSequence = { x: 0, y: 0 };
             state.savedPanStatic = { x: 0, y: 0 };
 
-            switchView('1');
+            // 智能选择第一个可用的视图作为初始视图
+            const viewPriority = ['1', '1.1', '2', '2.1', '3', '3.1', 'static'];
+            let initialView = '1'; // 默认回退
+            for (const viewId of viewPriority) {
+                if (!IS_EMPTY[viewId]) {
+                    initialView = viewId;
+                    break;
+                }
+            }
+
+            switchView(initialView);
 
             // 更新按钮文字
             updateButtonLabels();
@@ -1059,12 +1103,11 @@
                 IS_SINGLE_FILE[id] = false;
 
                 if (config.type === 'static') {
-                    // Logic: project_A/{ver}/xgt/效果图.png OR project_A/{ver}/hdt/灰度图.png
-                    // Mapping 'static' viewFolder to 'xgt' and 'static_hdt' to 'hdt' based on observed folder structure
+                    // 动态路径：{ver}/xgt/效果图.png OR {ver}/hdt/灰度图.png
                     const folderName = config.viewFolder === 'static' ? 'xgt' : 'hdt';
                     const fileName = config.viewFolder === 'static' ? '效果图.png' : '灰度图.png';
 
-                    const p = `project_A/${ver}/${folderName}/${fileName}`;
+                    const p = DEPLOY_CONFIG.buildPath(`${ver}/${folderName}/${fileName}`);
                     tasks.push({ type: 'static', id: id, src: encodeURI(p) });
                 } else {
                     // Sequence
@@ -1072,15 +1115,15 @@
 
                     // Fallback File
                     if (config.fallbackFile) {
-                        const fbSrc = `project_A/${ver}/${viewFolder}/${config.fallbackFile}`;
+                        const fbSrc = DEPLOY_CONFIG.buildPath(`${ver}/${viewFolder}/${config.fallbackFile}`);
                         tasks.push({ type: 'fallback', id: id, src: encodeURI(fbSrc) });
                     }
 
                     // Sequence Frames
                     for (let i = GLOBAL_CONFIG.SCAN_START; i <= GLOBAL_CONFIG.SCAN_LIMIT; i++) {
                         const numStr = String(i).padStart(4, '0');
-                        // Path: project_A/{ver}/{viewFolder}/序列 0xxx.png
-                        const p = `project_A/${ver}/${viewFolder}/序列 ${numStr}.png`;
+                        // 动态路径: {ver}/{viewFolder}/序列 0xxx.png
+                        const p = DEPLOY_CONFIG.buildPath(`${ver}/${viewFolder}/序列 ${numStr}.png`);
                         tasks.push({ type: 'seq', id: id, src: encodeURI(p), index: i });
                     }
                 }
@@ -1165,22 +1208,64 @@
 
         // 动态更新按钮文字
         function updateButtonLabels() {
-            // 检查每个主视图的子视图是否存在且不为空
+            // 检查每个主视图和子视图的存在情况
             const btn1 = document.getElementById('btn-view-1');
             const btn2 = document.getElementById('btn-view-2');
             const btn3 = document.getElementById('btn-view-3');
 
+            // 视图1组（正/背）
             if (btn1) {
-                const hasSubView = !IS_EMPTY['1.1'];
-                btn1.querySelector('.btn-content').innerText = hasSubView ? '正/背视图' : '正视图';
+                const hasMain = !IS_EMPTY['1'];
+                const hasSub = !IS_EMPTY['1.1'];
+                if (hasMain && hasSub) {
+                    btn1.querySelector('.btn-content').innerText = '正/背视图';
+                    btn1.style.display = '';
+                } else if (hasMain) {
+                    btn1.querySelector('.btn-content').innerText = '正视图';
+                    btn1.style.display = '';
+                } else if (hasSub) {
+                    btn1.querySelector('.btn-content').innerText = '背视图';
+                    btn1.style.display = '';
+                } else {
+                    // 两者都不存在，隐藏按钮
+                    btn1.style.display = 'none';
+                }
             }
+
+            // 视图2组（左/右）
             if (btn2) {
-                const hasSubView = !IS_EMPTY['2.1'];
-                btn2.querySelector('.btn-content').innerText = hasSubView ? '左/右视图' : '左视图';
+                const hasMain = !IS_EMPTY['2'];
+                const hasSub = !IS_EMPTY['2.1'];
+                if (hasMain && hasSub) {
+                    btn2.querySelector('.btn-content').innerText = '左/右视图';
+                    btn2.style.display = '';
+                } else if (hasMain) {
+                    btn2.querySelector('.btn-content').innerText = '左视图';
+                    btn2.style.display = '';
+                } else if (hasSub) {
+                    btn2.querySelector('.btn-content').innerText = '右视图';
+                    btn2.style.display = '';
+                } else {
+                    btn2.style.display = 'none';
+                }
             }
+
+            // 视图3组（俯/仰）
             if (btn3) {
-                const hasSubView = !IS_EMPTY['3.1'];
-                btn3.querySelector('.btn-content').innerText = hasSubView ? '俯/仰视图' : '俯视图';
+                const hasMain = !IS_EMPTY['3'];
+                const hasSub = !IS_EMPTY['3.1'];
+                if (hasMain && hasSub) {
+                    btn3.querySelector('.btn-content').innerText = '俯/仰视图';
+                    btn3.style.display = '';
+                } else if (hasMain) {
+                    btn3.querySelector('.btn-content').innerText = '俯视图';
+                    btn3.style.display = '';
+                } else if (hasSub) {
+                    btn3.querySelector('.btn-content').innerText = '仰视图';
+                    btn3.style.display = '';
+                } else {
+                    btn3.style.display = 'none';
+                }
             }
         }
 
@@ -1287,8 +1372,25 @@
         function handleMainViewClick(mainViewId) {
             const currentConfig = BASE_VIEW_CONFIG[state.currentViewId];
             const targetConfig = BASE_VIEW_CONFIG[mainViewId];
+
+            // 如果已经在同一按钮组中，不重复切换
             if (currentConfig && targetConfig && currentConfig.btnId === targetConfig.btnId) return;
-            switchView(mainViewId);
+
+            // 智能选择：优先主视图，如果主视图为空则使用子视图
+            let actualViewId = mainViewId;
+            if (IS_EMPTY[mainViewId]) {
+                // 查找对应的子视图
+                const config = BASE_VIEW_CONFIG[mainViewId];
+                if (config && config.subView && !IS_EMPTY[config.subView]) {
+                    actualViewId = config.subView;
+                } else {
+                    // 两者都不可用，不切换
+                    console.warn(`无可用视图：${mainViewId} 及其子视图都为空`);
+                    return;
+                }
+            }
+
+            switchView(actualViewId);
         }
 
         function switchView(viewId) {

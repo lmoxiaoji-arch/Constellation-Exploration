@@ -843,10 +843,14 @@
             SENSITIVITY: 0.4,
             MIN_ZOOM: 0.2,
             MAX_ZOOM: 1.2,
-            SCAN_START: 100,
-            SCAN_LIMIT: 150,  // 激进优化：减少到150帧，快速加载（原300）
+            // 序列帧配置
+            SCAN_START: 0,        // 起始编号（序列_00000.png）
+            SCAN_LIMIT: 49,       // 结束编号（序列_00049.png）
+            FILE_PREFIX: '序列_',  // 文件名前缀
+            NUM_DIGITS: 5,        // 编号位数
+            FILE_EXT: '.png',     // 文件扩展名
             DAMPING_FACTOR: 0.15,
-            SPRING_STRENGTH: 0.12 // 回弹强度，降低使其更柔和自然
+            SPRING_STRENGTH: 0.12
         };
 
         // --- Dynamic Config Logic ---
@@ -1121,8 +1125,9 @@
                 }
 
                 for (let i = GLOBAL_CONFIG.SCAN_START; i <= GLOBAL_CONFIG.SCAN_LIMIT; i++) {
-                    const numStr = String(i).padStart(4, '0');
-                    const p = DEPLOY_CONFIG.buildPath(`${ver}/${viewFolder}/序列 ${numStr}.png`);
+                    const numStr = String(i).padStart(GLOBAL_CONFIG.NUM_DIGITS, '0');
+                    const fileName = `${GLOBAL_CONFIG.FILE_PREFIX}${numStr}${GLOBAL_CONFIG.FILE_EXT}`;
+                    const p = DEPLOY_CONFIG.buildPath(`${ver}/${viewFolder}/${fileName}`);
                     tasks.push({ type: 'seq', id: viewId, src: encodeURI(p), index: i });
                 }
             }
@@ -1203,71 +1208,72 @@
 
                     // Sequence Frames
                     for (let i = GLOBAL_CONFIG.SCAN_START; i <= GLOBAL_CONFIG.SCAN_LIMIT; i++) {
-                        const numStr = String(i).padStart(4, '0');
-                        // 动态路径: {ver}/{viewFolder}/序列 0xxx.png
-                        const p = DEPLOY_CONFIG.buildPath(`${ver}/${viewFolder}/序列 ${numStr}.png`);
+                        const numStr = String(i).padStart(GLOBAL_CONFIG.NUM_DIGITS, '0');
+                        const fileName = `${GLOBAL_CONFIG.FILE_PREFIX}${numStr}${GLOBAL_CONFIG.FILE_EXT}`;
+                        const p = DEPLOY_CONFIG.buildPath(`${ver}/${viewFolder}/${fileName}`);
                         tasks.push({ type: 'seq', id: id, src: encodeURI(p), index: i });
                     }
                 }
             }
+        }
 
-            let loadedCount = 0;
-            const totalCount = tasks.length;
-            let simulatedProgress = 0;
-            const simInterval = setInterval(() => {
-                if (simulatedProgress < 90) {
-                    simulatedProgress += (Math.random() * 8); // 3秒左右完成模拟（原5秒）
-                    updateLoaderUI(loadedCount, totalCount, simulatedProgress);
-                }
-            }, 100);
-
-            const promises = tasks.map(task => {
-                return loadImage(task.src).then(img => {
-                    loadedCount++;
-                    if (task.type === 'seq') {
-                        img._index = task.index;
-                        IMAGE_CACHE[task.id].push(img);
-                    } else if (task.type === 'fallback') {
-                        img._isFallback = true;
-                        IMAGE_CACHE[task.id].push(img);
-                    } else {
-                        // 静态类型
-                        IMAGE_CACHE[task.id] = [img];
-                    }
-                    updateLoaderUI(loadedCount, totalCount, simulatedProgress);
-                }).catch(() => {
-                    loadedCount++;
-                    updateLoaderUI(loadedCount, totalCount, simulatedProgress);
-                });
-            });
-
-            await Promise.all(promises);
-            clearInterval(simInterval);
-
-            // 后处理：检查我们实际拥有什么
-            for (const id of Object.keys(BASE_VIEW_CONFIG)) {
-                let arr = IMAGE_CACHE[id] || [];
-
-                const seqFrames = arr.filter(img => !img._isFallback);
-                const fallbackFrame = arr.find(img => img._isFallback);
-
-                if (seqFrames.length > 0) {
-                    // 我们有序列帧
-                    seqFrames.sort((a, b) => a._index - b._index);
-                    IMAGE_CACHE[id] = seqFrames;
-                    if (seqFrames.length === 1) IS_SINGLE_FILE[id] = true;
-                } else if (fallbackFrame) {
-                    // 没有序列帧，但有回退
-                    IMAGE_CACHE[id] = [fallbackFrame];
-                    IS_SINGLE_FILE[id] = true;
-                } else if (arr.length > 0 && BASE_VIEW_CONFIG[id].type === 'static') {
-                    // 普通静态 - 保持原样
-                } else {
-                    // 未找到
-                    IS_EMPTY[id] = true;
-                    IMAGE_CACHE[id] = [];
-                }
+        let loadedCount = 0;
+        const totalCount = tasks.length;
+        let simulatedProgress = 0;
+        const simInterval = setInterval(() => {
+            if (simulatedProgress < 90) {
+                simulatedProgress += (Math.random() * 8); // 3秒左右完成模拟（原5秒）
+                updateLoaderUI(loadedCount, totalCount, simulatedProgress);
             }
+        }, 100);
+
+        const promises = tasks.map(task => {
+            return loadImage(task.src).then(img => {
+                loadedCount++;
+                if (task.type === 'seq') {
+                    img._index = task.index;
+                    IMAGE_CACHE[task.id].push(img);
+                } else if (task.type === 'fallback') {
+                    img._isFallback = true;
+                    IMAGE_CACHE[task.id].push(img);
+                } else {
+                    // 静态类型
+                    IMAGE_CACHE[task.id] = [img];
+                }
+                updateLoaderUI(loadedCount, totalCount, simulatedProgress);
+            }).catch(() => {
+                loadedCount++;
+                updateLoaderUI(loadedCount, totalCount, simulatedProgress);
+            });
+        });
+
+        await Promise.all(promises);
+        clearInterval(simInterval);
+
+        // 后处理：检查我们实际拥有什么
+        for (const id of Object.keys(BASE_VIEW_CONFIG)) {
+            let arr = IMAGE_CACHE[id] || [];
+
+            const seqFrames = arr.filter(img => !img._isFallback);
+            const fallbackFrame = arr.find(img => img._isFallback);
+
+            if (seqFrames.length > 0) {
+                // 我们有序列帧
+                seqFrames.sort((a, b) => a._index - b._index);
+                IMAGE_CACHE[id] = seqFrames;
+                if (seqFrames.length === 1) IS_SINGLE_FILE[id] = true;
+            } else if (fallbackFrame) {
+                // 没有序列帧，但有回退
+                IMAGE_CACHE[id] = [fallbackFrame];
+                IS_SINGLE_FILE[id] = true;
+            } else if (arr.length > 0 && BASE_VIEW_CONFIG[id].type === 'static') {
+                // 普通静态 - 保持原样
+            } else {
+                // 未找到
+                IS_EMPTY[id] = true;
+                IMAGE_CACHE[id] = [];
+            }
+        }
         }
 
         function updateLoaderUI(real, total, sim) {

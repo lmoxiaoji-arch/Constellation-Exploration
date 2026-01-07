@@ -844,7 +844,7 @@
             MIN_ZOOM: 0.2,
             MAX_ZOOM: 1.2,
             SCAN_START: 100,
-            SCAN_LIMIT: 180,  // 优化：减少扫描范围，加快加载速度（原300）
+            SCAN_LIMIT: 150,  // 激进优化：减少到150帧，快速加载（原300）
             DAMPING_FACTOR: 0.15,
             SPRING_STRENGTH: 0.12 // 回弹强度，降低使其更柔和自然
         };
@@ -1054,9 +1054,20 @@
         }
 
         async function loadVersion(ver) {
-            await preloadAll(ver);
+            // 懒加载优化：只加载第一个视图，其他按需加载
+            const viewPriority = ['1', '2', '3', 'static', '1.1', '2.1', '3.1'];
+            let initialView = '1';
 
-            // 重置所有视图状态，确保版本之间独立
+            // 只预加载第一个可用视图
+            for (const viewId of viewPriority) {
+                const success = await preloadSingleView(ver, viewId);
+                if (success) {
+                    initialView = viewId;
+                    break;
+                }
+            }
+
+            // 重置所有视图状态
             state.zoom = 0.8;
             state.targetZoom = 0.8;
             state.pan = { x: 0, y: 0 };
@@ -1066,19 +1077,7 @@
             state.savedPanSequence = { x: 0, y: 0 };
             state.savedPanStatic = { x: 0, y: 0 };
 
-            // 智能选择第一个可用的视图作为初始视图
-            const viewPriority = ['1', '1.1', '2', '2.1', '3', '3.1', 'static'];
-            let initialView = '1'; // 默认回退
-            for (const viewId of viewPriority) {
-                if (!IS_EMPTY[viewId]) {
-                    initialView = viewId;
-                    break;
-                }
-            }
-
             switchView(initialView);
-
-            // 更新按钮文字
             updateButtonLabels();
 
             setTimeout(() => {
@@ -1094,8 +1093,88 @@
         }
 
         // ==========================================
-        // 2. 加载逻辑 (混合内容)
+        // 2. 加载逻辑 (懒加载优化)
         // ==========================================
+
+        // 单个视图加载函数（懒加载）
+        async function preloadSingleView(ver, viewId) {
+            const config = BASE_VIEW_CONFIG[viewId];
+            if (!config) return false;
+
+            IMAGE_CACHE[viewId] = [];
+            IS_EMPTY[viewId] = false;
+            IS_SINGLE_FILE[viewId] = false;
+
+            const tasks = [];
+
+            if (config.type === 'static') {
+                const folderName = config.viewFolder === 'static' ? 'xgt' : 'hdt';
+                const fileName = config.viewFolder === 'static' ? '效果图.png' : '灰度图.png';
+                const p = DEPLOY_CONFIG.buildPath(`${ver}/${folderName}/${fileName}`);
+                tasks.push({ type: 'static', id: viewId, src: encodeURI(p) });
+            } else {
+                const viewFolder = config.viewFolder;
+
+                if (config.fallbackFile) {
+                    const fbSrc = DEPLOY_CONFIG.buildPath(`${ver}/${viewFolder}/${config.fallbackFile}`);
+                    tasks.push({ type: 'fallback', id: viewId, src: encodeURI(fbSrc) });
+                }
+
+                for (let i = GLOBAL_CONFIG.SCAN_START; i <= GLOBAL_CONFIG.SCAN_LIMIT; i++) {
+                    const numStr = String(i).padStart(4, '0');
+                    const p = DEPLOY_CONFIG.buildPath(`${ver}/${viewFolder}/序列 ${numStr}.png`);
+                    tasks.push({ type: 'seq', id: viewId, src: encodeURI(p), index: i });
+                }
+            }
+
+            let loadedCount = 0;
+            const totalCount = tasks.length;
+
+            const promises = tasks.map(task => {
+                return loadImage(task.src).then(img => {
+                    loadedCount++;
+                    if (task.type === 'seq') {
+                        img._index = task.index;
+                        IMAGE_CACHE[viewId].push(img);
+                    } else if (task.type === 'fallback') {
+                        img._isFallback = true;
+                        IMAGE_CACHE[viewId].push(img);
+                    } else {
+                        IMAGE_CACHE[viewId] = [img];
+                    }
+                    const pct = (loadedCount / totalCount) * 100;
+                    if (loaderNum) loaderNum.innerText = Math.floor(pct) + '%';
+                }).catch(() => {
+                    loadedCount++;
+                });
+            });
+
+            await Promise.all(promises);
+
+            // 后处理
+            let arr = IMAGE_CACHE[viewId] || [];
+            const seqFrames = arr.filter(img => !img._isFallback);
+            const fallbackFrame = arr.find(img => img._isFallback);
+
+            if (seqFrames.length > 0) {
+                seqFrames.sort((a, b) => a._index - b._index);
+                IMAGE_CACHE[viewId] = seqFrames;
+                if (seqFrames.length === 1) IS_SINGLE_FILE[viewId] = true;
+                return true;
+            } else if (fallbackFrame) {
+                IMAGE_CACHE[viewId] = [fallbackFrame];
+                IS_SINGLE_FILE[viewId] = true;
+                return true;
+            } else if (arr.length > 0 && config.type === 'static') {
+                return true;
+            } else {
+                IS_EMPTY[viewId] = true;
+                IMAGE_CACHE[viewId] = [];
+                return false;
+            }
+        }
+
+        // 全量加载函数（废弃，保留兼容）
         async function preloadAll(ver) {
             const tasks = [];
 
@@ -1193,7 +1272,7 @@
 
         function updateLoaderUI(real, total, sim) {
             const realPct = (real / total) * 100;
-            const display = Math.min(Math.max(realPct, sim), 99);
+            const display = Math.min(Math.max(realPct, sim), 100);  // 允许到100%
             if (loaderNum) loaderNum.innerText = Math.floor(display) + '%';
         }
 

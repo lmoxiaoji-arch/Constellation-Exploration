@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 
 <head>
@@ -883,23 +883,30 @@
         const BASE_VIEW_CONFIG = {
             '1': {
                 type: 'sequence', subView: '1.1', name: '正视图', btnId: 'btn-view-1',
-                // pathSuffix: '/1', // OLD
-                viewFolder: '1',     // NEW identifier
+                viewFolder: '1',
+                // 新格式配置
+                sequenceConfig: { prefix: '序列_', digits: 5, start: 0, limit: 49, ext: '.png' },
                 angleRange: 60, baseRotY: 0, baseRotX: -15
             },
             '1.1': {
                 type: 'sequence', mainView: '1', name: '背视图', btnId: 'btn-view-1',
                 viewFolder: '1.1',
+                // 旧格式配置
+                sequenceConfig: { prefix: '序列 ', digits: 4, start: 100, limit: 200, ext: '.png' },
                 angleRange: 60, baseRotY: 180, baseRotX: -15
             },
             '2': {
                 type: 'sequence', subView: '2.1', name: '左视图', btnId: 'btn-view-2',
                 viewFolder: '2',
+                // 旧格式配置
+                sequenceConfig: { prefix: '序列 ', digits: 4, start: 100, limit: 200, ext: '.png' },
                 angleRange: 60, baseRotY: -90, baseRotX: -15
             },
             '2.1': {
                 type: 'sequence', mainView: '2', name: '右视图', btnId: 'btn-view-2',
                 viewFolder: '2.1',
+                // 旧格式配置
+                sequenceConfig: { prefix: '序列 ', digits: 4, start: 100, limit: 200, ext: '.png' },
                 angleRange: 60, baseRotY: 90, baseRotX: -15
             },
             '3': {
@@ -1124,9 +1131,18 @@
                     tasks.push({ type: 'fallback', id: viewId, src: encodeURI(fbSrc) });
                 }
 
-                for (let i = GLOBAL_CONFIG.SCAN_START; i <= GLOBAL_CONFIG.SCAN_LIMIT; i++) {
-                    const numStr = String(i).padStart(GLOBAL_CONFIG.NUM_DIGITS, '0');
-                    const fileName = `${GLOBAL_CONFIG.FILE_PREFIX}${numStr}${GLOBAL_CONFIG.FILE_EXT}`;
+                // 使用视图专属配置，如果没有则使用全局配置
+                const seqCfg = config.sequenceConfig || {
+                    prefix: GLOBAL_CONFIG.FILE_PREFIX,
+                    digits: GLOBAL_CONFIG.NUM_DIGITS,
+                    start: GLOBAL_CONFIG.SCAN_START,
+                    limit: GLOBAL_CONFIG.SCAN_LIMIT,
+                    ext: GLOBAL_CONFIG.FILE_EXT
+                };
+
+                for (let i = seqCfg.start; i <= seqCfg.limit; i++) {
+                    const numStr = String(i).padStart(seqCfg.digits, '0');
+                    const fileName = `${seqCfg.prefix}${numStr}${seqCfg.ext}`;
                     const p = DEPLOY_CONFIG.buildPath(`${ver}/${viewFolder}/${fileName}`);
                     tasks.push({ type: 'seq', id: viewId, src: encodeURI(p), index: i });
                 }
@@ -1206,10 +1222,18 @@
                         tasks.push({ type: 'fallback', id: id, src: encodeURI(fbSrc) });
                     }
 
-                    // Sequence Frames
-                    for (let i = GLOBAL_CONFIG.SCAN_START; i <= GLOBAL_CONFIG.SCAN_LIMIT; i++) {
-                        const numStr = String(i).padStart(GLOBAL_CONFIG.NUM_DIGITS, '0');
-                        const fileName = `${GLOBAL_CONFIG.FILE_PREFIX}${numStr}${GLOBAL_CONFIG.FILE_EXT}`;
+                    // 使用视图专属配置，如果没有则使用全局配置
+                    const seqCfg = config.sequenceConfig || {
+                        prefix: GLOBAL_CONFIG.FILE_PREFIX,
+                        digits: GLOBAL_CONFIG.NUM_DIGITS,
+                        start: GLOBAL_CONFIG.SCAN_START,
+                        limit: GLOBAL_CONFIG.SCAN_LIMIT,
+                        ext: GLOBAL_CONFIG.FILE_EXT
+                    };
+
+                    for (let i = seqCfg.start; i <= seqCfg.limit; i++) {
+                        const numStr = String(i).padStart(seqCfg.digits, '0');
+                        const fileName = `${seqCfg.prefix}${numStr}${seqCfg.ext}`;
                         const p = DEPLOY_CONFIG.buildPath(`${ver}/${viewFolder}/${fileName}`);
                         tasks.push({ type: 'seq', id: id, src: encodeURI(p), index: i });
                     }
@@ -1274,7 +1298,7 @@
                 IMAGE_CACHE[id] = [];
             }
         }
-        }
+
 
         function updateLoaderUI(real, total, sim) {
             const realPct = (real / total) * 100;
